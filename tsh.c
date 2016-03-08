@@ -4,7 +4,6 @@
  * This program implements a tiny shell with job control.
  *
  * Yejin Kim yk26
- * Yue Zhang yz53
  */
 
 #include <sys/types.h>
@@ -60,6 +59,9 @@ extern char **environ;             // defined by libc
 
 static char prompt[] = "tsh> ";    // command line prompt (DO NOT CHANGE)
 static bool verbose = false;       // If true, print additional output.
+
+static char **directories; // store directories
+static int directoryCount = 0;
 
 /*
  * The following array can be used to map a signal number to its name.
@@ -374,6 +376,12 @@ waitfg(pid_t pid)
 	(void)pid;
 }
 
+static void
+addDirectory(char *directory) {
+	directories[directoryCount] = directory;
+	directoryCount++;
+}
+
 /* 
  * initpath - Perform all necessary initialization of the search path,
  *  which may be simply saving the path.
@@ -387,33 +395,46 @@ waitfg(pid_t pid)
 static void
 initpath(const char *pathstr)
 {
-	char **directories = malloc(sizeof(char**) * 100);
-	int directoryCount = 0;
+	directories = malloc(sizeof(char **) * 100); // TODO size
 	int curr_index = 0;
 	int starting_index = 0;
 	bool colon = false;
 	while (true) {
 		char c= pathstr[curr_index];
 		if (c == '\0') {
+			// if path ends with colon or path is empty
+			if (colon || curr_index == 0) {
+				addDirectory("");
+			}
+			else {
+				int size = curr_index - starting_index;
+				char *currDirectory = malloc(sizeof(char*) * size);
+				strncpy(currDirectory, &pathstr[starting_index], size);
+				addDirectory(currDirectory);
+				//printf("currDirectory: %s\n", currDirectory);
+			}
 			break;
 		}
 		if (c == ':') {
-			colon = true;
-			int size = curr_index - starting_index;
-			char *currDirectory = malloc(sizeof(char*) * size);
-			strncpy(currDirectory, &pathstr[starting_index], size);
-			printf("currDirectory: %s\n", currDirectory);
-			starting_index = curr_index + 1;
-			
+			// if two colons in a row or path starts with colon
+			if (colon || curr_index == 0) {
+				addDirectory("");
+			}
+			else {
+				colon = true;
+				int size = curr_index - starting_index;
+				char *currDirectory = malloc(sizeof(char*) * size);
+				strncpy(currDirectory, &pathstr[starting_index], size);
+				addDirectory(currDirectory);
+				starting_index = curr_index + 1;
+				//printf("currDirectory: %s\n", currDirectory);
+			}	
 		}
 		else colon = false;
-
 		curr_index++;
 	}
-	//todo: empty string, double colon.. realloc
 
 	printf("this is the path: %s\n", pathstr);
-	// store different directorys. delimit by colon
 }
 
 /*
