@@ -4,6 +4,7 @@
  * This program implements a tiny shell with job control.
  *
  * Yejin Kim yk26
+ * Yue Zhang yz53
  */
 
 #include <sys/types.h>
