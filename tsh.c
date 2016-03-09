@@ -475,16 +475,16 @@ sigchld_handler(int signum)
 	int status;
 
 	while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
-		struct job_t *pcurjob = getjobpid(jobs, pid);
+		struct Job *pcurjob = getjobpid(jobs, pid);
 		if (!pcurjob) {
 			app_error("pcurjob in sigtstp_handler");
 		}
 
 		if (WIFSTOPPED(status)) {
 			pcurjob->state = ST;
-			Sio_puts("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, SIGTSTP);
+			printf("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, SIGTSTP);
 		} else if (WIFSIGNALED(status)) {
-			Sio_puts("Job [%d] (%d) terminated by signal %d\n", pcurjob->jid, pcurjob->pid, WTERMSIG(status));
+			print("Job [%d] (%d) terminated by signal %d\n", pcurjob->jid, pcurjob->pid, WTERMSIG(status));
 			deletejob(jobs, pid);
 		} else {
 			deletejob(jobs, pid);
