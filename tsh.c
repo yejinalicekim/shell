@@ -475,7 +475,7 @@ sigchld_handler(int signum)
 	int status;
 
 	while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
-		struct volatile Job *pcurjob = getjobpid(jobs, pid);
+		struct Job *pcurjob = getjobpid(jobs, pid);
 
 		if (!pcurjob) {
 			app_error("pcurjob in sigtstp_handler");
