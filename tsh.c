@@ -476,9 +476,16 @@ sigchld_handler(int signum)
 static void
 sigint_handler(int signum)
 {
+	pid_t pid;
+	if ((pid = fgpid(jobs)) <= 0) {
+		return;
+	}
 
-	// Prevent an "unused parameter" warning.
-	(void)signum;
+	if (kill(-pid, SIGINT) < 0) {
+		perror("kill");
+	}
+
+	return;
 }
 
 /*
@@ -495,9 +502,16 @@ sigint_handler(int signum)
 static void
 sigtstp_handler(int signum)
 {
+	pid_t pid;
+	if ((pid = fgpid(jobs)) <= 0) {
+		return;
+	}
 
-	// Prevent an "unused parameter" warning.
-	(void)signum;
+	if (kill(-pid, SIGTSTP) < 0) {
+		perror("kill");
+	}
+
+	return;
 }
 
 /*
