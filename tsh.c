@@ -371,9 +371,19 @@ do_bgfg(char **argv)
 static void
 waitfg(pid_t pid)
 {
+	sigset_t mask;
+	if (sigemptyset(&mask) < 0)
+		perror("sigemptyset");
 
-	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
-	(void)pid;
+	while (1) {
+		if (fgpid(jobs) != pid) {
+			return;
+		}
+		
+		sigsuspend(&mask);
+	}
+
+	return;
 }
 
 static void
