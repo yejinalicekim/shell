@@ -475,7 +475,8 @@ sigchld_handler(int signum)
 	int status;
 
 	while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
-		struct Job *pcurjob = getjobpid(jobs, pid);
+		struct volatile Job *pcurjob = getjobpid(jobs, pid);
+
 		if (!pcurjob) {
 			app_error("pcurjob in sigtstp_handler");
 		}
@@ -484,7 +485,7 @@ sigchld_handler(int signum)
 			pcurjob->state = ST;
 			printf("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, SIGTSTP);
 		} else if (WIFSIGNALED(status)) {
-			print("Job [%d] (%d) terminated by signal %d\n", pcurjob->jid, pcurjob->pid, WTERMSIG(status));
+			printf("Job [%d] (%d) terminated by signal %d\n", pcurjob->jid, pcurjob->pid, WTERMSIG(status));
 			deletejob(jobs, pid);
 		} else {
 			deletejob(jobs, pid);
