@@ -440,9 +440,19 @@ do_bgfg(char **argv)
 static void
 waitfg(pid_t pid)
 {
+	sigset_t mask;
+	if (sigemptyset(&mask) < 0)
+		perror("sigemptyset");
 
-	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
-	(void)pid;
+	while (1) {
+		if (fgpid(jobs) != pid) {
+			return;
+		}
+		
+		sigsuspend(&mask);
+	}
+
+	return;
 }
 
 static void
@@ -527,6 +537,29 @@ sigchld_handler(int signum)
 
 	// Prevent an "unused parameter" warning.
 	(void)signum;
+
+	pid_t pid;
+	int status;
+
+	while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
+		struct Job *pcurjob = getjobpid(jobs, pid);
+
+		if (!pcurjob) {
+			app_error("pcurjob in sigtstp_handler");
+		}
+
+		if (WIFSTOPPED(status)) {
+			pcurjob->state = ST;
+			printf("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, SIGTSTP);
+		} else if (WIFSIGNALED(status)) {
+			printf("Job [%d] (%d) terminated by signal %d\n", pcurjob->jid, pcurjob->pid, WTERMSIG(status));
+			deletejob(jobs, pid);
+		} else {
+			deletejob(jobs, pid);
+		}
+	}
+
+	return;
 }
 
 /* 
@@ -543,9 +576,20 @@ sigchld_handler(int signum)
 static void
 sigint_handler(int signum)
 {
-
+	
 	// Prevent an "unused parameter" warning.
 	(void)signum;
+
+	pid_t pid;
+	if ((pid = fgpid(jobs)) <= 0) {
+		return;
+	}
+
+	if (kill(-pid, SIGINT) < 0) {
+		perror("kill");
+	}
+
+	return;
 }
 
 /*
@@ -565,6 +609,17 @@ sigtstp_handler(int signum)
 
 	// Prevent an "unused parameter" warning.
 	(void)signum;
+
+	pid_t pid;
+	if ((pid = fgpid(jobs)) <= 0) {
+		return;
+	}
+
+	if (kill(-pid, SIGTSTP) < 0) {
+		perror("kill");
+	}
+
+	return;
 }
 
 /*
