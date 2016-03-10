@@ -252,24 +252,28 @@ eval(const char *cmdline)
 {
 	char *argv[MAXARGS];
 	int bg = parseline(cmdline, argv);
-	int pid;
+	pid_t pid;
 	sigset_t mask;
 	
-	if (builtin_cmd(argv) == 0) { // not built in command
-		sigemptyset(&mask);
-		sigaddset(&mask, SIGCHLD);
-		sigprocmask(SIG_BLOCK, &mask, NULL);
-
-		pid = fork();
-		if (pid == 0) {
-			setpgid(0, 0);
-			sigprocmask(SIG_UNBLOCK, &mask, NULL);
-			//error
-			if (execve(argv[0], argv, environ) == -1) {
-				exit(0);
-			} 
-		}
+	if (!argv[0] || builtin_cmd(argv)) {
+		return;
 	}
+
+	
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGCHLD);
+	sigprocmask(SIG_BLOCK, &mask, NULL);
+
+	pid = fork();
+	if (pid == 0) {
+		setpgid(0, 0);
+		sigprocmask(SIG_UNBLOCK, &mask, NULL);
+		if (execve(argv[0], argv, environ) == -1) {
+			exit(0);
+		} 
+	}
+	
+
 	if (bg == 0) {
 		addjob(jobs,pid,FG,cmdline);
 		sigprocmask(SIG_UNBLOCK, &mask, NULL);
@@ -279,12 +283,11 @@ eval(const char *cmdline)
 	else {
 		addjob(jobs,pid,BG,cmdline);
 		sigprocmask(SIG_UNBLOCK, &mask, NULL);
-		printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);   
+		printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline); 
+		waitfg(pid);
 	}
  
-
-	
-
+	return;
 }
 
 /* 
@@ -397,7 +400,6 @@ static void
 do_bgfg(char **argv) 
 {
 	JobP currJob;
-	printf("do bgfg starting....\n");
 	if (argv[1] == NULL) {
 		printf("need job argument\n");
 		return;
@@ -421,7 +423,10 @@ do_bgfg(char **argv)
 		return;
 	}
 
-	kill(-currJob->pid,SIGCONT);
+	if (currJob->state == ST) {
+		kill(-currJob->pid, SIGCONT);
+	}
+	
 	if (strcmp("fg", argv[1]) == 0) {
 		currJob->state = FG;
 		waitfg(currJob->pid);
@@ -450,6 +455,7 @@ static void
 waitfg(pid_t pid)
 {
 	sigset_t mask;
+
 	if (sigemptyset(&mask) < 0)
 		perror("sigemptyset");
 
@@ -559,9 +565,9 @@ sigchld_handler(int signum)
 
 		if (WIFSTOPPED(status)) {
 			pcurjob->state = ST;
-			printf("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid, SIGTSTP);
+			printf("Job [%d] (%d) stopped by signal SIGTSTP\n", pid2jid(pid), pid);
 		} else if (WIFSIGNALED(status)) {
-			printf("Job [%d] (%d) terminated by signal %d\n", pcurjob->jid, pcurjob->pid, WTERMSIG(status));
+			printf("Job [%d] (%d) terminated by signal SIGINT\n", pcurjob->jid, pcurjob->pid);
 			deletejob(jobs, pid);
 		} else {
 			deletejob(jobs, pid);
