@@ -172,7 +172,6 @@ main(int argc, char **argv)
 	 * on the pipe connected to stdout).
 	 */
 	dup2(1, 2);
-
 	// Parse the command line.
 	while ((c = getopt(argc, argv, "hvp")) != -1) {
 		switch (c) {
@@ -190,7 +189,6 @@ main(int argc, char **argv)
 			usage();
 		}
 	}
-
 	// Install the signal handlers.
 
 	// These are the ones you will need to implement:
@@ -210,19 +208,18 @@ main(int argc, char **argv)
 
 	// Execute the shell's read/eval loop.
 	while (true) {
-
 		// Read the command line.
 		if (emit_prompt) {
 			printf("%s", prompt);
 			fflush(stdout);
 		}
-		if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin))
-			app_error("fgets error");
+		if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin)){
+			app_error("fgets error");}
 		if (feof(stdin)) { // End of file (ctrl-d)
 			fflush(stdout);
 			exit(0);
 		}
-
+		
 		// Evaluate the command line.
 		eval(cmdline);
 		fflush(stdout);
@@ -253,9 +250,32 @@ main(int argc, char **argv)
 static void
 eval(const char *cmdline) 
 {
+	char *argv[MAXARGS];
+	int bg = parseline(cmdline, argv);
+	int pid;
+	
+	if (builtin_cmd(argv) == 0) { // not built in command
+		pid = fork();
+		if (pid == 0) {
+			setpgid(0, 0);
+			//error
+			if (execve(argv[0], argv, environ) == -1) {
+				exit(0);
+			} 
+		}
+	}
+	if (bg == 0) {
+		addjob(jobs,pid,FG,cmdline);
+		// wait for fg jobs to complete
+		waitfg(pid);
+	}
+	else {
+		addjob(jobs,pid,BG,cmdline);
+	}
+ 
 
-	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
-	(void)cmdline;
+	
+
 }
 
 /* 
@@ -337,9 +357,22 @@ static int
 builtin_cmd(char **argv) 
 {
 
-	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
-	(void)argv;
-	return (0);     // This is not a built-in command.
+	if (strcmp("quit", argv[0]) == 0) {
+		exit(0);
+	}
+	else if (strcmp("jobs", argv[0]) == 0) {
+		listjobs(jobs);
+		return 1;
+	}
+	else if (strcmp("bg", argv[0]) == 0) {
+		do_bgfg(argv);
+		return 1;
+	}
+	else if (strcmp("fg", argv[0]) == 0) {
+		do_bgfg(argv);
+		return 1;
+	}
+	return 0; // not a built-in command
 }
 
 /* 
@@ -354,9 +387,45 @@ builtin_cmd(char **argv)
 static void
 do_bgfg(char **argv) 
 {
+	JobP currJob;
+	printf("do bgfg starting....\n");
+	if (argv[1] == NULL) {
+		printf("need job argument\n");
+		return;
+	}
+	// if PID
+	if (isdigit(argv[1][0])) {
+		// no such pid job
+		if ((currJob = getjobpid(jobs, atoi(argv[1]))) == NULL) {
+			return;
+		}
+	}
+	// if JID
+	else if (argv[1][0] == '%') {
+		// no such jid job
+		if ((currJob = getjobjid(jobs, atoi(&argv[1][1]))) == NULL) {
+			return;
+		}
+	}
+	// must be PID or JID
+	else {
+		return;
+	}
 
-	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
-	(void)argv;
+	kill(-currJob->pid,SIGCONT);
+	if (strcmp("fg", argv[1]) == 0) {
+		currJob->state = FG;
+		waitfg(currJob->pid);
+	}
+	else if (strcmp("bg", argv[1]) == 0) {
+		currJob->state = BG;
+		printf("[%d] (%d) %s", currJob->jid, currJob->pid, currJob->cmdline);
+	}
+	else {
+		return;
+	}
+	
+
 }
 
 /* 
@@ -395,7 +464,7 @@ addDirectory(char *directory) {
 static void
 initpath(const char *pathstr)
 {
-	directories = malloc(sizeof(char **) * 100); // TODO size
+	directories = malloc(sizeof(char **) * 100); // TODO : size
 	int curr_index = 0;
 	int starting_index = 0;
 	bool colon = false;
@@ -433,8 +502,6 @@ initpath(const char *pathstr)
 		else colon = false;
 		curr_index++;
 	}
-
-	printf("this is the path: %s\n", pathstr);
 }
 
 /*
