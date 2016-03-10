@@ -253,11 +253,17 @@ eval(const char *cmdline)
 	char *argv[MAXARGS];
 	int bg = parseline(cmdline, argv);
 	int pid;
+	sigset_t mask;
 	
 	if (builtin_cmd(argv) == 0) { // not built in command
+		sigemptyset(&mask);
+		sigaddset(&mask, SIGCHLD);
+		sigprocmask(SIG_BLOCK, &mask, NULL);
+
 		pid = fork();
 		if (pid == 0) {
 			setpgid(0, 0);
+			sigprocmask(SIG_UNBLOCK, &mask, NULL);
 			//error
 			if (execve(argv[0], argv, environ) == -1) {
 				exit(0);
@@ -266,11 +272,14 @@ eval(const char *cmdline)
 	}
 	if (bg == 0) {
 		addjob(jobs,pid,FG,cmdline);
+		sigprocmask(SIG_UNBLOCK, &mask, NULL);
 		// wait for fg jobs to complete
 		waitfg(pid);
 	}
 	else {
 		addjob(jobs,pid,BG,cmdline);
+		sigprocmask(SIG_UNBLOCK, &mask, NULL);
+		printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);   
 	}
  
 
