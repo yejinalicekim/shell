@@ -427,11 +427,11 @@ do_bgfg(char **argv)
 		kill(-currJob->pid, SIGCONT);
 	}
 	
-	if (strcmp("fg", argv[1]) == 0) {
+	if (strcmp("fg", argv[0]) == 0) {
 		currJob->state = FG;
 		waitfg(currJob->pid);
 	}
-	else if (strcmp("bg", argv[1]) == 0) {
+	else if (strcmp("bg", argv[0]) == 0) {
 		currJob->state = BG;
 		printf("[%d] (%d) %s", currJob->jid, currJob->pid, currJob->cmdline);
 	}
