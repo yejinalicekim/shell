@@ -154,10 +154,15 @@ static size_t sio_strlen(char s[]);
  * main - The shell's main routine 
  *
  * Requires:
- *   <???>
+ *   argc should be less than MAXARGS arguments.
+ *   argv should contain less than MAXARGS arguments.
  *
  * Effects:
- *   <???>
+ *   Runs an interactive command-line interpreter that runs programs on
+ *   behalf of the user. It waits for a command line and then carries out
+ *   the action of that command line. The shell executes built-in commands
+ *   immediately, but also can execute user programs by forking child 
+ *   processes. It manages jobs running the foreground and background.
  */
 int
 main(int argc, char **argv) 
@@ -242,10 +247,16 @@ main(int argc, char **argv)
  * when we type ctrl-c (ctrl-z) at the keyboard.  
  *
  * Requires:
- *   <???>
+ *   "cmdline" is a NUL ('\0') terminated string with a trailing
+ *   '\n' character.  "cmdline" must contain less than MAXARGS
+ *   arguments.
  *
  * Effects:
- *   <???>
+ *   A built-in command is executed immediately. Otherwise, it attempts 
+ *   to fork a child process and execute the job. If necessary, the 
+ *   executable program is searched through the directories of the 
+ *   search path. If not found, an error is thrown. If the job is
+ *   running as a foreground job, it waits until completion.  
  */
 static void
 eval(const char *cmdline) 
@@ -255,36 +266,52 @@ eval(const char *cmdline)
 	pid_t pid;
 	sigset_t mask;
 	
-	if (!argv[0] || builtin_cmd(argv)) {
+	// Checks command line is not empty.
+	if (!argv[0]) {
 		return;
 	}
 
-	
-	sigemptyset(&mask);
-	sigaddset(&mask, SIGCHLD);
-	sigprocmask(SIG_BLOCK, &mask, NULL);
+	// Checks that the command is not a built-in command.
+	if(!builtin_cmd(argv)){
+		sigemptyset(&mask);
+		sigaddset(&mask, SIGCHLD);
+		sigprocmask(SIG_BLOCK, &mask, NULL);
 
-	pid = fork();
-	if (pid == 0) {
-		setpgid(0, 0);
-		sigprocmask(SIG_UNBLOCK, &mask, NULL);
-		if (execve(argv[0], argv, environ) == -1) {
-			exit(0);
-		} 
-	}
+		// A child is forked. 
+		pid = fork();
+		if (pid == 0) {
+			// Put child in new group whose ID is identical to child’s PID.
+			setpgid(0, 0);
+			sigprocmask(SIG_UNBLOCK, &mask, NULL);
+
+			if (execve(argv[0], argv, environ) == -1) {
+				int index = 0;
+				// Run through directories in search path to execute program.
+				while (argv[0][0] != '.' && index < directoryCount) {
+					if (execve(strcat(directories[index],argv[0]), argv, environ) != -1) {
+						break;
+					}
+					index++;
+				}
+				// Command not found.
+				char *print;
+				asprintf(&print, "%s: Command not found\n", argv[0]);
+				sio_error(print);
+			} 
+		}
 	
 
-	if (bg == 0) {
-		addjob(jobs,pid,FG,cmdline);
-		sigprocmask(SIG_UNBLOCK, &mask, NULL);
-		// wait for fg jobs to complete
-		waitfg(pid);
-	}
-	else {
-		addjob(jobs,pid,BG,cmdline);
-		sigprocmask(SIG_UNBLOCK, &mask, NULL);
-		printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline); 
-		waitfg(pid);
+		if (bg == 0) {
+			addjob(jobs,pid,FG,cmdline);
+			sigprocmask(SIG_UNBLOCK, &mask, NULL);
+			// Wait for foreground jobs to complete.
+			waitfg(pid);
+		}
+		else {
+			addjob(jobs,pid,BG,cmdline);
+			sigprocmask(SIG_UNBLOCK, &mask, NULL);
+			printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline); 
+		}
 	}
  
 	return;
@@ -360,15 +387,15 @@ parseline(const char *cmdline, char **argv)
  *  it immediately.  
  *
  * Requires:
- *   <???>
+ *   argv should contain less than MAXARGS arguments.
  *
  * Effects:
- *   <???>
+ *   Checks the type of command and calls the appropriate function. 
+ *   If the command is not a built-in command, the function returns 0. 
  */
 static int
 builtin_cmd(char **argv) 
 {
-
 	if (strcmp("quit", argv[0]) == 0) {
 		exit(0);
 	}
@@ -384,41 +411,41 @@ builtin_cmd(char **argv)
 		do_bgfg(argv);
 		return 1;
 	}
-	return 0; // not a built-in command
+	// This is not a build-in command.
+	return 0;
 }
 
 /* 
  * do_bgfg - Execute the built-in bg and fg commands.
  *
  * Requires:
- *   <???>
+ *   argv should contain less than MAXARGS arguments.
  *
  * Effects:
- *   <???>
+ *   Checks the validity of the arguments and changes 
+ *   the states of the jobs to either foreground or background. 
  */
 static void
 do_bgfg(char **argv) 
 {
 	JobP currJob;
 	if (argv[1] == NULL) {
-		printf("need job argument\n");
 		return;
 	}
-	// if PID
+	// Check if argument is PID.
 	if (isdigit(argv[1][0])) {
-		// no such pid job
+		// There is no such pid job.
 		if ((currJob = getjobpid(jobs, atoi(argv[1]))) == NULL) {
 			return;
 		}
 	}
-	// if JID
+	// Check if argument is JID.
 	else if (argv[1][0] == '%') {
-		// no such jid job
+		// There is no such jid job.
 		if ((currJob = getjobjid(jobs, atoi(&argv[1][1]))) == NULL) {
 			return;
 		}
 	}
-	// must be PID or JID
 	else {
 		return;
 	}
@@ -429,6 +456,7 @@ do_bgfg(char **argv)
 	
 	if (strcmp("fg", argv[0]) == 0) {
 		currJob->state = FG;
+		// Wait for foreground jobs to complete.
 		waitfg(currJob->pid);
 	}
 	else if (strcmp("bg", argv[0]) == 0) {
@@ -489,14 +517,22 @@ addDirectory(char *directory) {
 static void
 initpath(const char *pathstr)
 {
-	directories = malloc(sizeof(char **) * 100); // TODO : size
+	// Find out how many directories are in PATH.
+	size_t count = 1;
+	char *pathstr_copy = pathstr;
+	while(*pathstr_copy != '\0')	{
+		count += *pathstr_copy++ == ':';
+	}
+
+	directories = malloc(sizeof(char **) * count);
 	int curr_index = 0;
 	int starting_index = 0;
 	bool colon = false;
+	// Parse search path into directories using colon as delimiter. 
 	while (true) {
 		char c= pathstr[curr_index];
 		if (c == '\0') {
-			// if path ends with colon or path is empty
+			// If path ends with colon or path is empty, interpret as current directory.
 			if (colon || curr_index == 0) {
 				addDirectory("");
 			}
@@ -505,12 +541,12 @@ initpath(const char *pathstr)
 				char *currDirectory = malloc(sizeof(char*) * size);
 				strncpy(currDirectory, &pathstr[starting_index], size);
 				addDirectory(currDirectory);
-				//printf("currDirectory: %s\n", currDirectory);
 			}
 			break;
 		}
 		if (c == ':') {
-			// if two colons in a row or path starts with colon
+			/* If two colons in a row or path starts with colon, 
+			   interpret as current directory. */
 			if (colon || curr_index == 0) {
 				addDirectory("");
 			}
@@ -521,7 +557,6 @@ initpath(const char *pathstr)
 				strncpy(currDirectory, &pathstr[starting_index], size);
 				addDirectory(currDirectory);
 				starting_index = curr_index + 1;
-				//printf("currDirectory: %s\n", currDirectory);
 			}	
 		}
 		else colon = false;
@@ -565,9 +600,13 @@ sigchld_handler(int signum)
 
 		if (WIFSTOPPED(status)) {
 			pcurjob->state = ST;
-			printf("Job [%d] (%d) stopped by signal SIGTSTP\n", pid2jid(pid), pid);
+			char *print;
+			asprintf(&print, "Job [%d] (%d) stopped by signal SIGTSTP\n", pid2jid(pid), pid);
+			sio_puts(print);
 		} else if (WIFSIGNALED(status)) {
-			printf("Job [%d] (%d) terminated by signal SIGINT\n", pcurjob->jid, pcurjob->pid);
+			char *print;
+			asprintf(&print, "Job [%d] (%d) terminated by signal SIGINT\n", pcurjob->jid, pcurjob->pid);
+		        sio_puts(print);
 			deletejob(jobs, pid);
 		} else {
 			deletejob(jobs, pid);
