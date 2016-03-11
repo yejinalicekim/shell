@@ -4,6 +4,7 @@
  * This program implements a tiny shell with job control.
  *
  * Yejin Kim yk26
+ * Yue Zhang yz53
  */
 
 #include <sys/types.h>
@@ -449,7 +450,7 @@ do_bgfg(char **argv)
 	else {
 		return;
 	}
-
+	// Send out SIGCONT to processes in process group of currJob
 	if (currJob->state == ST) {
 		kill(-currJob->pid, SIGCONT);
 	}
@@ -474,10 +475,10 @@ do_bgfg(char **argv)
  * waitfg - Block until process pid is no longer the foreground process.
  *
  * Requires:
- *   <???>
+ *   Non-null pid.
  *
  * Effects:
- *   <???>
+ *   Waits for a foreground job to complete.
  */
 static void
 waitfg(pid_t pid)
@@ -488,16 +489,26 @@ waitfg(pid_t pid)
 		perror("sigemptyset");
 
 	while (1) {
+		// If the foreground job completes, return
 		if (fgpid(jobs) != pid) {
 			return;
 		}
-		
+		// Else suspend/block
 		sigsuspend(&mask);
 	}
 
 	return;
 }
 
+/*
+ * addDirectory - Helper function to add directory to directories array
+ *
+ * Requires:
+ *   Length of directories array is not exceeded
+ *
+ * Effects:
+ *   Add directory to directories array
+ */
 static void
 addDirectory(char *directory) {
 	directories[directoryCount] = directory;
@@ -512,7 +523,7 @@ addDirectory(char *directory) {
  *   "pathstr" is a valid search path.
  *
  * Effects:
- *   <???>
+ *   Initialize search path.
  */
 static void
 initpath(const char *pathstr)
@@ -576,10 +587,14 @@ initpath(const char *pathstr)
  *  currently running children to terminate.  
  *
  * Requires:
- *   <???>
+ *   When a child job terminates or stops, it sends out signal successfully
  *
  * Effects:
- *   <???>
+ *   If the child job is stopped by a signal, change its state and print signal 
+ *   information; if the child job is terminated by a signal, print signal 
+ *   information and delete the child job; if the child job is terminated in 
+ *   other ways, delete it. The handler reaps all available zombie children, 
+ *   but doesn't wait for any currently running children to terminate. 
  */
 static void
 sigchld_handler(int signum)
@@ -591,24 +606,29 @@ sigchld_handler(int signum)
 	pid_t pid;
 	int status;
 
+	// Reap zombie children but doesn't wait for currently running children
 	while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
 		struct Job *pcurjob = getjobpid(jobs, pid);
 
 		if (!pcurjob) {
 			app_error("pcurjob in sigtstp_handler");
 		}
-
+		// If a child stops, change its state to ST and print the information
 		if (WIFSTOPPED(status)) {
 			pcurjob->state = ST;
 			char *print;
 			asprintf(&print, "Job [%d] (%d) stopped by signal SIGTSTP\n", pid2jid(pid), pid);
 			sio_puts(print);
-		} else if (WIFSIGNALED(status)) {
+		} 
+		// If a child terminates by signal, print the information and delete the job
+		else if (WIFSIGNALED(status)) {
 			char *print;
 			asprintf(&print, "Job [%d] (%d) terminated by signal SIGINT\n", pcurjob->jid, pcurjob->pid);
 		        sio_puts(print);
 			deletejob(jobs, pid);
-		} else {
+		}
+		// Delete the job is the child terminates in any other way
+		else {
 			deletejob(jobs, pid);
 		}
 	}
@@ -622,10 +642,10 @@ sigchld_handler(int signum)
  *  to the foreground job.  
  *
  * Requires:
- *   <???>
+ *   SIGINT is sent out successfully
  *
  * Effects:
- *   <???>
+ *   Send SIGINT to every process in the process group of current foreground job
  */
 static void
 sigint_handler(int signum)
@@ -635,10 +655,11 @@ sigint_handler(int signum)
 	(void)signum;
 
 	pid_t pid;
+	// Get pid of current foreground job
 	if ((pid = fgpid(jobs)) <= 0) {
 		return;
 	}
-
+	// Send SIGINT to every process in process group |pid|
 	if (kill(-pid, SIGINT) < 0) {
 		perror("kill");
 	}
@@ -652,10 +673,10 @@ sigint_handler(int signum)
  *  foreground job by sending it a SIGTSTP.  
  *
  * Requires:
- *   <???>
+ *   SIGTSTP is sent out successfully
  *
  * Effects:
- *   <???>
+ *   Send SIGTSTP to every process in the process group of current foreground job
  */
 static void
 sigtstp_handler(int signum)
@@ -665,10 +686,11 @@ sigtstp_handler(int signum)
 	(void)signum;
 
 	pid_t pid;
+	// Get pid of current foreground job
 	if ((pid = fgpid(jobs)) <= 0) {
 		return;
 	}
-
+	// Send SIGTSTP to every process in process group |pid|
 	if (kill(-pid, SIGTSTP) < 0) {
 		perror("kill");
 	}

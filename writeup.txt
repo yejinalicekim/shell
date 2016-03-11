@@ -1,22 +1,72 @@
-<insert name(s)>
+Yejin Kim yk26, Yue Zhang yz53
 COMP 321 Project 4: Unix Shell
-<insert date turned in>
+03/10/2016
 
 DESCRIPTION
 
-<insert a brief description of your solution (i.e., a short synopsis
-of what the application does from the perspective of someone who
-would use it).>
+This solution implements a simple Unix shell program that supports job control.
+The tiny shell is an interactive command-line interpreter that runs programs on
+behalf of the user. It repeatedly prints a prompt, waits for a command line on 
+stdin, and then carries out some action as directed by the contents of the 
+command line, which is a sequence of ASCII text words delimited by whitespace.
 
 DESIGN
 
-<insert a detailed description of any appropriate design decisions you
-made, such as data structures, algorithms, etc.>
+initpath:
+We created an array to store directories in path, malloc'd it, and parsed search
+ path into directories using colon as delimiter. If path ends with colon or path
+ is empty, interpret it as current directory. If two colons in a row or path 
+starts with colon, interpret it as current directory as well. The current
+directory is malloc'd and added to our directories array for evaluation later.
+
+eval:
+If there is a builtin command, it's executed immediately; otherwise the funciton
+attempts to fork a chil process and execute the job. If necessary, the executable
+program is searched through the directories of the search path. If the job is 
+running as a foreground job, it waits until completion. When a child is forked, we put the child in a new group whose ID is identical to child's PID to prevent 
+it from receiving wrong signals. In addition, before forking, we need to block
+SIGCHLD to prevent the racing between addjob and deletejob.
+
+builtin_cmd:
+We check for the four types of builtin commands we need to handle and perform 
+actions respectively. When the command if bg or fg, we call the do_bgfg function.
+
+do_bgfg:
+The function checks the valididty of the arguments and changes the states of the 
+jobs to either foreground or background. We create a local variable currjob of
+type JobP to store the job and change its state according to the builtin command.
+If it's fg, we wait for current foreground jobs to complete; if it's bg, we run 
+it in background and print the information accordingly. We check if the argument
+is PID or JID and store te job accordingly in currjob. We also send out SIGCONT
+to stopped processes in process group of currjob.
+
+waitfg:
+Instead of pause or sleep, We make use of sigsuspend to block until process pid is no longer the foreground process to prevent race and make the program run 
+faster.
+
+sigchld_handler:
+We make use of a while loop to make sure the handler reaps all available zombie
+children. And the use of WNOHANG | WUNTRACED allows the handler to continue 
+running instead of waiting for any currently running children to terminate. 
+We check the status of stopped or terminated children with WIFSTOPPED and 
+WIFSIGNALED and perform actions accordingly.
+
+sigint_handler:
+We send SIGINT to every process in the process group of current foreground job.
+
+sigstp_handler:
+We send SIGTSTP to every process in the process group of current foreground job.
 
 TESTING STRATEGY
 
-<insert a detailed description of your testing strategy: at a minimum
-you should explain how you tested your code, how you selected your
-inputs, and why that selection is sufficient to test your code.>
+We make sure our program is correct by testing on the 12 trace txts. We compare
+our results to the results returned by reference solution, tshref, and make sure
+the outputs of both solutions of every trace are identical. After we finish 
+testing on provided test cases, we type non-existing commands to our tsh, and 
+make sure it displays "Command not found" as what is displayed by the tshref. We
+also run our tsh on non-existing files to make sure it displays correct output
+message. Finally, we test if our program reaps all available zombie children.
+
+As a result, we believe our solution is correct.
 
 
